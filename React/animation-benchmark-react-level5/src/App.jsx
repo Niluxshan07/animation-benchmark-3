@@ -142,7 +142,7 @@ function App() {
       <section className="hero">
         <div className="hero-left">
           <p className="badge">🔬 Research Project — SUSL</p>
-          <h1>Animation <span className="highlight">Performance</span> Benchmark</h1>
+          <h1>Animation <span className="highlight">Performance</span> Benchmark - React.js</h1>
           <p className="level-tag" style={levelTagStyle}>{levelTagText}</p>
           <p className="hero-sub">
             A controlled experimental study comparing animation rendering
