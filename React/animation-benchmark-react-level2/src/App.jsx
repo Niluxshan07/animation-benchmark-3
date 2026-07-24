@@ -119,10 +119,7 @@ function App() {
       <ErrorBoundary>
         <section className="hero">
           <div className="hero-left">
-            {/* L2 own effect: float-drift on badge */}
-            <p className="badge">
-              <span className="float-drift">🔬 Research Project — SUSL</span>
-            </p>
+            <p className="badge">🔬 Research Project — SUSL</p>
             <h1>
               Animation{' '}
               {/* L3 typography added: shadow-depth on highlight word */}
@@ -139,17 +136,16 @@ function App() {
               <button className="btn-secondary" onClick={openLearnMoreModal}>Learn More</button>
             </div>
             <div className="hero-stats">
-              {/* L3 typography added: bounce-pulse on stat numbers */}
               <div className="stat">
-                <span className="stat-number bounce-pulse">4</span>
+                <span className="stat-number">4</span>
                 <span className="stat-label">Frameworks</span>
               </div>
               <div className="stat">
-                <span className="stat-number bounce-pulse">7</span>
+                <span className="stat-number">7</span>
                 <span className="stat-label">Metrics</span>
               </div>
               <div className="stat">
-                <span className="stat-number bounce-pulse">30+</span>
+                <span className="stat-number">30+</span>
                 <span className="stat-label">Test Runs</span>
               </div>
             </div>

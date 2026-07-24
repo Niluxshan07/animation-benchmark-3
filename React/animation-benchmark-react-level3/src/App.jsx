@@ -153,7 +153,9 @@ function App() {
       <ErrorBoundary>
         <section className="hero">
           <div className="hero-left">
-            <p className="badge">🔬 Research Project — SUSL</p>
+            <p className="badge">
+              <span className="float-drift">🔬 Research Project — SUSL</span>
+            </p>
             <h1>
               Animation{' '}
               {/* L3 shadow-depth on highlight word */}

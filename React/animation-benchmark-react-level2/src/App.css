@@ -339,28 +339,7 @@
 .ring-3        { animation: ringPulse 3s cubic-bezier(0.4, 0, 0.2, 1) infinite 1s; }
 .animated-logo { animation: logoPulseStagger 2s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite; }
 
-/* ─── Level 2 text effect: Float Drift (badge only) ──────────────────────── */
-@keyframes floatDrift {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-6px); }
-}
-.float-drift {
-  display: inline-block;
-  animation: floatDrift 4s ease-in-out infinite;
-}
-
-/* ─── Level 3 typography added: Bounce Pulse (stats) + Shadow Depth (highlight) */
-@keyframes bouncePulse {
-  0%, 100% { transform: scale(1) translateY(0); }
-  25%       { transform: scale(1.08) translateY(-4px); }
-  50%       { transform: scale(0.97) translateY(0); }
-  75%       { transform: scale(1.05) translateY(-2px); }
-}
-.bounce-pulse {
-  display: inline-block;
-  animation: bouncePulse 2.6s ease-in-out infinite;
-}
-
+/* ─── Level 3 typography (kept for the shadow-depth highlight effect) ───── */
 @keyframes shadowDepth {
   0%   { text-shadow: -3px  3px 6px rgba(79, 70, 229, 0.35); }
   25%  { text-shadow:  3px -3px 6px rgba(79, 70, 229, 0.35); }
