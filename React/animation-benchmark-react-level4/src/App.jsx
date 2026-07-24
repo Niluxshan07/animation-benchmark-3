@@ -1,21 +1,38 @@
-import { useEffect, useRef, useState } from 'react';
-import { motion, useMotionValue, useSpring, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import { Component, useEffect, useRef, useState } from 'react';
+import { motion, useMotionValue, useSpring, AnimatePresence } from 'framer-motion';
 import gsap from 'gsap';
 import './App.css';
 
-const levelBadgeStyle = {
-  background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+/* ─── Error Boundary ─────────────────────────────────────────────────────── */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError)
+      return <div className="error-fallback">Animation could not be loaded.</div>;
+    return this.props.children;
+  }
+}
+
+/* ─── Constants ──────────────────────────────────────────────────────────── */
+const LEVEL_BADGE_STYLE = {
+  background: 'linear-gradient(135deg, #f472b6, #7c3aed)',
   color: 'white',
   padding: '6px 18px',
   borderRadius: '20px',
   fontSize: '0.85rem',
   fontWeight: '700',
-  boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
+  boxShadow: '0 2px 14px rgba(124,58,237,0.4)',
 };
-const levelTagStyle = {
-  background: '#fdf4ff',
-  color: '#7c3aed',
-  border: '1px solid #e9d5ff',
+const LEVEL_TAG_STYLE = {
+  background: '#fdf2f8',
+  color: '#be185d',
+  border: '1px solid #fbcfe8',
   padding: '6px 14px',
   borderRadius: '20px',
   fontSize: '0.83rem',
@@ -44,56 +61,67 @@ const learnMore = {
   ],
 };
 
-function useCountUp(target, duration = 1400, startDelay = 1600) {
+/* ─── RAF count-up hook ──────────────────────────────────────────────────── */
+function useCountUp(target, duration = 1200, startDelay = 900) {
   const [value, setValue] = useState(0);
   const [done, setDone] = useState(false);
   useEffect(() => {
     let raf;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const start = performance.now();
       const tick = (now) => {
-        const p = Math.min((now - start) / duration, 1);
-        const eased = 1 - Math.pow(1 - p, 4);
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
         setValue(Math.round(eased * target));
-        if (p < 1) raf = requestAnimationFrame(tick);
+        if (progress < 1) raf = requestAnimationFrame(tick);
         else setDone(true);
       };
       raf = requestAnimationFrame(tick);
     }, startDelay);
-    return () => { clearTimeout(t); cancelAnimationFrame(raf); };
+    return () => { clearTimeout(timer); cancelAnimationFrame(raf); };
   }, [target, duration, startDelay]);
   return { value, done };
 }
 
+/* ─── Elastic-stretch stat with Framer Motion spring ─────────────────────── */
 function CountStat({ target, suffix = '', label, delayMs }) {
-  const { value, done } = useCountUp(target, 1300, delayMs);
+  const { value, done } = useCountUp(target, 1100, delayMs);
   return (
     <motion.div
       className="stat"
-      initial={{ opacity: 0, y: 20, filter: 'blur(6px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      transition={{ delay: delayMs / 1000, duration: 0.6 }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: delayMs / 1000, duration: 0.5 }}
     >
-      <span className={`stat-number${done ? ' glow-done' : ''}`}>{value}{suffix}</span>
+      <motion.span
+        key={value}
+        className={`stat-number elastic-stretch${done ? ' glow-done' : ''}`}
+        initial={{ scaleY: 1.55, scaleX: 0.72 }}
+        animate={{ scaleY: 1, scaleX: 1 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 9 }}
+      >
+        {value}{suffix}
+      </motion.span>
       <span className="stat-label">{label}</span>
     </motion.div>
   );
 }
 
+/* ─── Magnetic button ────────────────────────────────────────────────────── */
 function MagneticButton({ className, onClick, children }) {
   const ref = useRef(null);
   const x = useMotionValue(0);
   const y = useMotionValue(0);
-  const sx = useSpring(x, { stiffness: 180, damping: 14 });
-  const sy = useSpring(y, { stiffness: 180, damping: 14 });
+  const sx = useSpring(x, { stiffness: 200, damping: 15 });
+  const sy = useSpring(y, { stiffness: 200, damping: 15 });
+
   const handleMove = (e) => {
     const rect = ref.current.getBoundingClientRect();
-    x.set((e.clientX - rect.left - rect.width / 2) * 0.3);
-    y.set((e.clientY - rect.top - rect.height / 2) * 0.3);
-    ref.current.style.setProperty('--mx', `${e.clientX - rect.left}px`);
-    ref.current.style.setProperty('--my', `${e.clientY - rect.top}px`);
+    x.set((e.clientX - rect.left - rect.width / 2) * 0.25);
+    y.set((e.clientY - rect.top - rect.height / 2) * 0.25);
   };
   const handleLeave = () => { x.set(0); y.set(0); };
+
   return (
     <motion.button
       ref={ref}
@@ -102,55 +130,111 @@ function MagneticButton({ className, onClick, children }) {
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
       style={{ x: sx, y: sy }}
-      whileTap={{ scale: 0.9 }}
-      whileHover={{ scale: 1.06, boxShadow: '0 10px 32px rgba(124,58,237,0.55)' }}
-      transition={{ type: 'spring', stiffness: 380, damping: 12 }}
+      whileTap={{ scale: 0.92 }}
+      whileHover={{ scale: 1.05 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 12 }}
     >
       {children}
     </motion.button>
   );
 }
 
+/* ─── Tilt card ──────────────────────────────────────────────────────────── */
+function TiltCard({ className, children, initialX = 0 }) {
+  const ref = useRef(null);
+  const rx = useMotionValue(0);
+  const ry = useMotionValue(0);
+  const srx = useSpring(rx, { stiffness: 150, damping: 14 });
+  const sry = useSpring(ry, { stiffness: 150, damping: 14 });
+
+  const handleMove = (e) => {
+    const rect = ref.current.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width - 0.5;
+    const py = (e.clientY - rect.top) / rect.height - 0.5;
+    ry.set(px * 6);
+    rx.set(-py * 6);
+  };
+  const handleLeave = () => { rx.set(0); ry.set(0); };
+
+  return (
+    <motion.div
+      ref={ref}
+      className={`${className} tilt-card`}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      style={{ rotateX: srx, rotateY: sry }}
+      initial={{ opacity: 0, x: initialX }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ type: 'spring', stiffness: 90, damping: 16, delay: 0.15 }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+/* ─── Heading words & scramble glyphs ───────────────────────────────────── */
 const headingWords = ['Animation', 'Performance', 'Benchmark'];
 const descLines = [
   'A controlled experimental study comparing animation rendering',
   'performance across React, Vue.js, Svelte and Angular frameworks.',
 ];
+const SCRAMBLE_GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#%&*+=';
 
-function Level4() {
+/* ─── App ────────────────────────────────────────────────────────────────── */
+function App() {
   const [modal, setModal] = useState(null);
+
+  useEffect(() => {
+    if (!modal) return;
+    const onKey = (e) => { if (e.key === 'Escape') setModal(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [modal]);
+
   const openResearchModal = () => setModal(researchInfo);
   const openLearnMoreModal = () => setModal(learnMore);
   const closeModal = () => setModal(null);
 
   const heroRef = useRef(null);
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
-  const circleY = useTransform(scrollYProgress, [0, 1], [0, 60]);
-
   const headingRef = useRef(null);
-  const ring1Ref = useRef(null);
-  const ring2Ref = useRef(null);
-  const ring3Ref = useRef(null);
-  const logoRef = useRef(null);
 
+  /* ── L5 typography: GSAP letter scramble + 3D entrance ── */
   useEffect(() => {
+    const scrambleIntervals = [];
     const ctx = gsap.context(() => {
       const letters = headingRef.current.querySelectorAll('.letter');
+      const originals = Array.from(letters).map((el) => el.textContent);
+
+      letters.forEach((el, i) => {
+        if (originals[i] === ' ') return;
+        let ticks = 0;
+        const maxTicks = 8 + (i % 4);
+        const id = setInterval(() => {
+          ticks += 1;
+          if (ticks >= maxTicks) {
+            el.textContent = originals[i];
+            clearInterval(id);
+          } else {
+            el.textContent = SCRAMBLE_GLYPHS[Math.floor(Math.random() * SCRAMBLE_GLYPHS.length)];
+          }
+        }, 45);
+        scrambleIntervals.push(id);
+      });
 
       gsap.fromTo(
         letters,
-        { opacity: 0, y: 42, rotateX: -90, transformPerspective: 500 },
+        { opacity: 0, y: 36, rotateX: -85, transformPerspective: 500 },
         {
           opacity: 1,
           y: 0,
           rotateX: 0,
-          duration: 0.7,
+          duration: 0.65,
           ease: 'back.out(1.6)',
           stagger: 0.035,
-          delay: 0.7,
+          delay: 0.5,
           onComplete: () => {
             gsap.to(letters, {
-              y: -6,
+              y: -5,
               duration: 1.4,
               ease: 'sine.inOut',
               repeat: -1,
@@ -160,37 +244,17 @@ function Level4() {
           },
         }
       );
-
-      gsap.to(ring1Ref.current, { rotation: 360, duration: 20, repeat: -1, ease: 'none' });
-      gsap.to(ring2Ref.current, { rotation: -360, duration: 16, repeat: -1, ease: 'none' });
-      gsap.to(ring3Ref.current, { rotation: 360, duration: 12, repeat: -1, ease: 'none' });
-
-      gsap.to(logoRef.current, {
-        scale: 1.18,
-        duration: 1.3,
-        repeat: -1,
-        yoyo: true,
-        ease: 'elastic.out(1, 0.45)',
-        delay: 1,
-      });
-      gsap.to(logoRef.current, {
-        boxShadow: '0 0 55px rgba(124,58,237,0.85)',
-        duration: 1.3,
-        repeat: -1,
-        yoyo: true,
-        ease: 'sine.inOut',
-        delay: 1,
-      });
     }, heroRef);
 
-    return () => ctx.revert();
+    return () => {
+      scrambleIntervals.forEach(clearInterval);
+      ctx.revert();
+    };
   }, []);
-
-  const handleLogoEnter = () => gsap.to(logoRef.current, { scale: 1.32, rotate: '+=25', duration: 0.4, ease: 'power2.out' });
-  const handleLogoLeave = () => gsap.to(logoRef.current, { scale: 1, rotate: '+=0', duration: 0.5, ease: 'elastic.out(1, 0.5)' });
 
   return (
     <div className="page">
+      {/* ── Modal ── */}
       <AnimatePresence>
         {modal && (
           <motion.div
@@ -202,24 +266,34 @@ function Level4() {
           >
             <motion.div
               className="modal-box"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
               onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.7, rotate: -4, filter: 'blur(6px)' }}
-              animate={{ opacity: 1, scale: 1, rotate: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, scale: 0.85, filter: 'blur(4px)' }}
-              transition={{ type: 'spring', stiffness: 240, damping: 20 }}
+              initial={{ opacity: 0, scale: 0.85, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
             >
               <div className="modal-header">
-                <h2>{modal.title}</h2>
-                <motion.button whileHover={{ rotate: 90, scale: 1.08 }} className="modal-close" onClick={closeModal}>✕</motion.button>
+                <h2 id="modal-title">{modal.title}</h2>
+                <motion.button
+                  whileHover={{ rotate: 90 }}
+                  className="modal-close"
+                  onClick={closeModal}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </motion.button>
               </div>
               <div className="modal-body">
                 {modal.content.map((item, idx) => (
                   <motion.div
                     className="modal-item"
                     key={idx}
-                    initial={{ opacity: 0, x: -14 }}
+                    initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.07 }}
+                    transition={{ delay: idx * 0.06 }}
                   >
                     <span className="modal-dot">▸</span>
                     <p>{item}</p>
@@ -231,140 +305,152 @@ function Level4() {
         )}
       </AnimatePresence>
 
+      {/* ── Navbar ── */}
       <motion.nav
         className="navbar"
-        initial={{ y: -80, opacity: 0 }}
+        initial={{ y: -70, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ type: 'spring', stiffness: 110, damping: 15, delay: 0.1 }}
+        transition={{ type: 'spring', stiffness: 120, damping: 16 }}
       >
         <div className="brand">
-          <motion.span
-            className="brand-dot"
-            animate={{ scale: [1, 1.6, 1], boxShadow: ['0 0 0px #4f46e5', '0 0 14px #4f46e5', '0 0 0px #4f46e5'] }}
-            transition={{ duration: 2, repeat: Infinity, delay: 0.6 }}
-          />
+          <span className="brand-dot" aria-hidden="true"></span>
           AnimBench
         </div>
         <motion.div
           className="level-badge"
-          style={levelBadgeStyle}
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.4, type: 'spring', stiffness: 260, damping: 16 }}
+          style={LEVEL_BADGE_STYLE}
+          animate={{ scale: [1, 1.06, 1] }}
+          transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
         >
-          Level 4 — Cinematic
+          Level 4 — Interactive Premium
         </motion.div>
       </motion.nav>
 
-      <section className="hero" ref={heroRef}>
-        <div className="aurora"><span /><span /><span /></div>
-
-        <div className="hero-left" style={{ position: 'relative', zIndex: 2 }}>
-          <motion.p
-            className="badge"
-            initial={{ opacity: 0, y: -12, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ delay: 0.55, duration: 0.5 }}
-          >
-            🔬 Research Project — SUSL
-          </motion.p>
-
-          <h1 ref={headingRef} style={{ perspective: 500 }}>
-            {headingWords.map((word) => (
-              <span
-                key={word}
-                className={`word${word === 'Performance' ? ' highlight' : ''}`}
-                style={{ display: 'inline-block', marginRight: '0.28em' }}
-              >
-                {word.split('').map((ch, ci) => (
-                  <span key={ci} className="letter" style={{ display: 'inline-block' }}>{ch}</span>
-                ))}
-              </span>
-            ))}
-          </h1>
-
-          <motion.p
-            className="level-tag"
-            style={levelTagStyle}
-            initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ delay: 1.5, duration: 0.55 }}
-            whileHover={{ scale: 1.08, y: -3, boxShadow: '0 6px 18px rgba(124,58,237,0.3)' }}
-          >
-            🎬 Level 4: Cinematic effects · Drop shadows · Blur · Smooth GPU transitions
-          </motion.p>
-
-          <div className="hero-sub">
-            {descLines.map((line, i) => (
-              <motion.p
-                key={i}
-                initial={{ opacity: 0, filter: 'blur(5px)' }}
-                animate={{ opacity: 1, filter: 'blur(0px)' }}
-                transition={{ delay: 1.7 + i * 0.2, duration: 0.5 }}
-              >
-                {line}
-              </motion.p>
-            ))}
+      {/* ── Hero ── */}
+      <ErrorBoundary>
+        <section className="hero" ref={heroRef}>
+          {/* Aurora background blobs */}
+          <div className="aurora" aria-hidden="true">
+            <span /><span /><span />
           </div>
 
-          <motion.div
-            className="hero-buttons"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 2.15 }}
-          >
-            <MagneticButton className="btn-primary" onClick={openResearchModal}>View Research</MagneticButton>
-            <MagneticButton className="btn-secondary" onClick={openLearnMoreModal}>Learn More</MagneticButton>
-          </motion.div>
+          <TiltCard className="hero-left" initialX={-60}>
+            <motion.p
+              className="badge"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              🔬 Research Project — SUSL
+            </motion.p>
 
-          <div className="hero-stats">
-            <CountStat target={4} label="Frameworks" delayMs={2350} />
-            <CountStat target={7} label="Metrics" delayMs={2500} />
-            <CountStat target={30} suffix="+" label="Test Runs" delayMs={2650} />
-          </div>
-        </div>
+            {/* L5 typography: per-letter spans for GSAP scramble */}
+            <h1 ref={headingRef} style={{ perspective: 600 }}>
+              {headingWords.map((word) => (
+                <span
+                  key={word}
+                  className={`word${word === 'Performance' ? ' highlight' : ''}`}
+                >
+                  {word.split('').map((ch, ci) => (
+                    <span key={ci} className="letter">{ch}</span>
+                  ))}
+                </span>
+              ))}
+            </h1>
 
-        <motion.div
-          className="hero-right"
-          style={{ position: 'relative', zIndex: 2, y: circleY }}
-          initial={{ opacity: 0, x: 70 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.9, type: 'spring', stiffness: 80, damping: 15 }}
-        >
-          <div className="logo-wrapper">
-            <div className="ring ring-1" ref={ring1Ref}></div>
-            <div className="ring ring-2" ref={ring2Ref}></div>
-            <div className="ring ring-3" ref={ring3Ref}></div>
-            <div
-              className="animated-logo"
-              ref={logoRef}
-              onMouseEnter={handleLogoEnter}
-              onMouseLeave={handleLogoLeave}
-            ></div>
-          </div>
-          <motion.p
-            className="logo-label"
-            initial={{ opacity: 0, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, filter: 'blur(0px)' }}
-            transition={{ delay: 1.7 }}
-            whileHover={{ scale: 1.08, y: -2 }}
-          >
-            ⚡ Animated Test Element
-          </motion.p>
-        </motion.div>
-      </section>
+            <motion.p
+              className="level-tag"
+              style={LEVEL_TAG_STYLE}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: [10, -4, 0] }}
+              transition={{ delay: 0.9, duration: 0.6 }}
+              whileHover={{ scale: 1.08, y: -3 }}
+            >
+              🚀 Level 4: Spring physics · Bounce · Elastic motion · GSAP scramble
+            </motion.p>
 
+            <div className="hero-sub">
+              {descLines.map((line, i) => (
+                <motion.p
+                  key={i}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 1.05 + i * 0.2, duration: 0.5 }}
+                >
+                  {line}
+                </motion.p>
+              ))}
+            </div>
+
+            <motion.div
+              className="hero-buttons"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 1.5 }}
+            >
+              <MagneticButton className="btn-primary" onClick={openResearchModal}>
+                View Research
+              </MagneticButton>
+              <MagneticButton className="btn-secondary" onClick={openLearnMoreModal}>
+                Learn More
+              </MagneticButton>
+            </motion.div>
+
+            <div className="hero-stats">
+              <CountStat target={4}  label="Frameworks" delayMs={1650} />
+              <CountStat target={7}  label="Metrics"    delayMs={1800} />
+              <CountStat target={30} suffix="+" label="Test Runs" delayMs={1950} />
+            </div>
+          </TiltCard>
+
+          <TiltCard className="hero-right" initialX={60}>
+            <div className="logo-wrapper">
+              <div className="ring ring-1"></div>
+              <div className="ring ring-2"></div>
+              <div className="ring ring-3"></div>
+              <motion.div
+                className="animated-logo"
+                animate={{
+                  scale: [1, 1.15, 1],
+                  rotate: [0, 15, 0],
+                  boxShadow: [
+                    '0 0 40px rgba(79,70,229,0.4)',
+                    '0 0 60px rgba(124,58,237,0.7)',
+                    '0 0 40px rgba(79,70,229,0.4)',
+                  ],
+                }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                whileHover={{ scale: 1.25, rotate: 20 }}
+              />
+            </div>
+            <motion.p
+              className="logo-label"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 1.2 }}
+              whileHover={{ scale: 1.06, y: -2 }}
+            >
+              ⚡ Animated Test Element
+            </motion.p>
+          </TiltCard>
+        </section>
+      </ErrorBoundary>
+
+      {/* ── Footer ── */}
       <motion.footer
         className="footer"
-        initial={{ opacity: 0, scale: 0.96, y: 30 }}
-        whileInView={{ opacity: 1, scale: 1, y: 0 }}
+        initial={{ opacity: 0, y: 30 }}
+        whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true, amount: 0.4 }}
-        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.6 }}
       >
         <div className="footer-inner">
-          <div className="footer-brand"><span className="brand-dot"></span>AnimBench</div>
+          <div className="footer-brand">
+            <span className="brand-dot" aria-hidden="true"></span>
+            AnimBench
+          </div>
           <p>IS 8101 Research Project in Information Systems</p>
-          <p>Department of Computing & Information Systems</p>
+          <p>Department of Computing &amp; Information Systems</p>
           <p>Sabaragamuwa University of Sri Lanka</p>
           <p className="footer-copy">© 2025 S. Niluxshan — 20APC4681</p>
         </div>
@@ -373,4 +459,4 @@ function Level4() {
   );
 }
 
-export default Level4;
+export default App;

@@ -1,18 +1,35 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 import './App.css';
 
-const levelBadgeText = 'Level 3 — Advanced Transitions';
-const levelBadgeStyle = {
+/* ─── Error Boundary ─────────────────────────────────────────────────────── */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError)
+      return <div className="error-fallback">Animation could not be loaded.</div>;
+    return this.props.children;
+  }
+}
+
+/* ─── Constants ──────────────────────────────────────────────────────────── */
+const LEVEL_BADGE_TEXT = 'Level 3 — Advanced Transitions';
+const LEVEL_BADGE_STYLE = {
   background: '#d97706',
   color: 'white',
   padding: '6px 18px',
   borderRadius: '20px',
   fontSize: '0.85rem',
   fontWeight: '700',
-  
 };
-const levelTagText = '⚙ Level 3: Advanced transitions · will-change hints · Smoother multi-step timing';
-const levelTagStyle = {
+const LEVEL_TAG_TEXT =
+  '⚙ Level 3: Advanced transitions · will-change hints · Smoother multi-step timing';
+const LEVEL_TAG_STYLE = {
   background: '#fefce8',
   color: '#a16207',
   border: '1px solid #fde68a',
@@ -44,51 +61,50 @@ const learnMore = {
   ],
 };
 
-const ANIMATION_CSS = `
-      @keyframes dotPulse {
-        0%, 100% { transform: scale(1); opacity: 1; }
-        33%  { transform: scale(1.25); opacity: 0.85; }
-        66%  { transform: scale(1.4); opacity: 0.7; }
-      }
-      @keyframes ringPulse {
-        0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.2; }
-        50% { transform: scale(1.08) rotate(8deg); opacity: 0.45; }
-      }
-      @keyframes logoPulse {
-        0%   { transform: rotate(0deg) scale(1); opacity: 1; }
-        30%  { transform: rotate(108deg) scale(1.15); opacity: 0.85; }
-        60%  { transform: rotate(216deg) scale(1.3); opacity: 0.65; }
-        100% { transform: rotate(360deg) scale(1); opacity: 1; }
-      }
-      @keyframes modalIn {
-        from { transform: scale(0.88) translateY(10px); opacity: 0; }
-        60%  { transform: scale(1.02) translateY(-2px); opacity: 1; }
-        to   { transform: scale(1) translateY(0); opacity: 1; }
-      }
-      .brand-dot { animation: dotPulse 2s ease-in-out infinite; will-change: transform, opacity; }
-      .ring-1 { animation: ringPulse 3.2s ease-in-out infinite 0s; will-change: transform, opacity; }
-      .ring-2 { animation: ringPulse 3.2s ease-in-out infinite 0.55s; will-change: transform, opacity; }
-      .ring-3 { animation: ringPulse 3.2s ease-in-out infinite 1.1s; will-change: transform, opacity; }
-      .animated-logo { animation: logoPulse 2.2s ease-in-out infinite; will-change: transform, opacity; transition: transform 0.4s ease-in-out; }
-      .modal-box { animation: modalIn 0.45s ease-out; }
-      .btn-primary { transition: background 0.25s ease, transform 0.2s ease, box-shadow 0.2s ease; }
-      .btn-primary:hover { box-shadow: 0 6px 20px rgba(79,70,229,0.35); }
-      .btn-secondary { transition: all 0.25s ease; }
-`;
+/* ─── L4 typography added: RAF count-up hook ─────────────────────────────── */
+function useCountUp(target, duration = 1100, startDelay = 900) {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    let raf;
+    const timer = setTimeout(() => {
+      const start = performance.now();
+      const tick = (now) => {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        setValue(Math.round(eased * target));
+        if (progress < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }, startDelay);
+    return () => { clearTimeout(timer); cancelAnimationFrame(raf); };
+  }, [target, duration, startDelay]);
+  return value;
+}
 
+/* ─── L4 typography added: Elastic-stretch stat component ───────────────── */
+/* key={value} remounts the span on each tick → re-triggers CSS animation.   */
+function CountStat({ target, suffix = '', label, delayMs = 900 }) {
+  const value = useCountUp(target, 1100, delayMs);
+  return (
+    <div className="stat">
+      <span key={value} className="stat-number elastic-stretch bounce-pulse">
+        {value}{suffix}
+      </span>
+      <span className="stat-label">{label}</span>
+    </div>
+  );
+}
+
+/* ─── App ────────────────────────────────────────────────────────────────── */
 function App() {
   const [modal, setModal] = useState(null);
 
   useEffect(() => {
-    const styleElement = document.createElement('style');
-    styleElement.id = 'dynamic-animations';
-    document.head.appendChild(styleElement);
-    styleElement.textContent = ANIMATION_CSS;
-
-    return () => {
-      styleElement.remove();
-    };
-  }, []);
+    if (!modal) return;
+    const onKey = (e) => { if (e.key === 'Escape') setModal(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [modal]);
 
   const openResearchModal = () => setModal(researchInfo);
   const openLearnMoreModal = () => setModal(learnMore);
@@ -96,12 +112,21 @@ function App() {
 
   return (
     <div className="page">
+      {/* ── Modal ── */}
       {modal && (
         <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="modal-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2>{modal.title}</h2>
-              <button className="modal-close" onClick={closeModal}>✕</button>
+              <h2 id="modal-title">{modal.title}</h2>
+              <button className="modal-close" onClick={closeModal} aria-label="Close modal">
+                ✕
+              </button>
             </div>
             <div className="modal-body">
               {modal.content.map((item, idx) => (
@@ -114,47 +139,65 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* ── Navbar ── */}
       <nav className="navbar">
         <div className="brand">
-          <span className="brand-dot"></span>
+          <span className="brand-dot" aria-hidden="true"></span>
           AnimBench
         </div>
-        <div className="level-badge" style={levelBadgeStyle}>{levelBadgeText}</div>
+        <div className="level-badge" style={LEVEL_BADGE_STYLE}>{LEVEL_BADGE_TEXT}</div>
       </nav>
-      <section className="hero">
-        <div className="hero-left">
-          <p className="badge">🔬 Research Project — SUSL</p>
-          <h1>Animation <span className="highlight">Performance</span> Benchmark - React.js</h1>
-          <p className="level-tag" style={levelTagStyle}>{levelTagText}</p>
-          <p className="hero-sub">
-            A controlled experimental study comparing animation rendering
-            performance across React, Vue.js, Svelte and Angular frameworks.
-          </p>
-          <div className="hero-buttons">
-            <button className="btn-primary" onClick={openResearchModal}>View Research</button>
-            <button className="btn-secondary" onClick={openLearnMoreModal}>Learn More</button>
+
+      {/* ── Hero ── */}
+      <ErrorBoundary>
+        <section className="hero">
+          <div className="hero-left">
+            <p className="badge">🔬 Research Project — SUSL</p>
+            <h1>
+              Animation{' '}
+              {/* L3 shadow-depth on highlight word */}
+              <span className="highlight shadow-depth">Performance</span>{' '}
+              Benchmark
+            </h1>
+            <p className="level-tag" style={LEVEL_TAG_STYLE}>{LEVEL_TAG_TEXT}</p>
+            <p className="hero-sub">
+              A controlled experimental study comparing animation rendering
+              performance across React, Vue.js, Svelte and Angular frameworks.
+            </p>
+            <div className="hero-buttons">
+              <button className="btn-primary" onClick={openResearchModal}>View Research</button>
+              <button className="btn-secondary" onClick={openLearnMoreModal}>Learn More</button>
+            </div>
+            {/* L4 typography added: elastic-stretch count-up on stats */}
+            <div className="hero-stats">
+              <CountStat target={4}  label="Frameworks" delayMs={900} />
+              <CountStat target={7}  label="Metrics"    delayMs={1050} />
+              <CountStat target={30} suffix="+" label="Test Runs" delayMs={1200} />
+            </div>
           </div>
-          <div className="hero-stats">
-            <div className="stat"><span className="stat-number">4</span><span className="stat-label">Frameworks</span></div>
-            <div className="stat"><span className="stat-number">7</span><span className="stat-label">Metrics</span></div>
-            <div className="stat"><span className="stat-number">30+</span><span className="stat-label">Test Runs</span></div>
+
+          <div className="hero-right">
+            <div className="logo-wrapper">
+              <div className="ring ring-1"></div>
+              <div className="ring ring-2"></div>
+              <div className="ring ring-3"></div>
+              <div className="animated-logo"></div>
+            </div>
+            <p className="logo-label">⚡ Animated Test Element</p>
           </div>
-        </div>
-        <div className="hero-right">
-          <div className="logo-wrapper">
-            <div className="ring ring-1"></div>
-            <div className="ring ring-2"></div>
-            <div className="ring ring-3"></div>
-            <div className="animated-logo"></div>
-          </div>
-          <p className="logo-label">⚡ Animated Test Element</p>
-        </div>
-      </section>
+        </section>
+      </ErrorBoundary>
+
+      {/* ── Footer ── */}
       <footer className="footer">
         <div className="footer-inner">
-          <div className="footer-brand"><span className="brand-dot"></span>AnimBench</div>
+          <div className="footer-brand">
+            <span className="brand-dot" aria-hidden="true"></span>
+            AnimBench
+          </div>
           <p>IS 8101 Research Project in Information Systems</p>
-          <p>Department of Computing & Information Systems</p>
+          <p>Department of Computing &amp; Information Systems</p>
           <p>Sabaragamuwa University of Sri Lanka</p>
           <p className="footer-copy">© 2025 S. Niluxshan — 20APC4681</p>
         </div>

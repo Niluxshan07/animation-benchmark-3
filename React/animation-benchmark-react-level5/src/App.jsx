@@ -1,16 +1,44 @@
-import { useEffect, useMemo, useRef, useState, Component } from 'react';
-import * as THREE from 'three';
-import {
-  useSpring as useSpringWeb,
-  useSprings as useSpringsWeb,
-  useTransition,
-  animated as animatedWeb,
-} from '@react-spring/web';
+import { Component, useEffect, useRef, useState } from 'react';
+import { motion, useMotionValue, useSpring, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import gsap from 'gsap';
 import './App.css';
 
-/* ---------------------------------------------------------------------- */
-/*  Content                                                                */
-/* ---------------------------------------------------------------------- */
+/* ─── Error Boundary ─────────────────────────────────────────────────────── */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError)
+      return <div className="error-fallback">Animation could not be loaded.</div>;
+    return this.props.children;
+  }
+}
+
+/* ─── Constants ──────────────────────────────────────────────────────────── */
+const LEVEL_BADGE_STYLE = {
+  background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+  color: 'white',
+  padding: '6px 18px',
+  borderRadius: '20px',
+  fontSize: '0.85rem',
+  fontWeight: '700',
+  boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
+};
+const LEVEL_TAG_STYLE = {
+  background: '#fdf4ff',
+  color: '#7c3aed',
+  border: '1px solid #e9d5ff',
+  padding: '6px 14px',
+  borderRadius: '20px',
+  fontSize: '0.83rem',
+  fontWeight: '600',
+  marginBottom: '18px',
+};
 
 const researchInfo = {
   title: 'About This Research',
@@ -33,20 +61,8 @@ const learnMore = {
   ],
 };
 
-const headingWords = ['Animation', 'Performance', 'Benchmark', '✦'];
-// duplicated once so the marquee track can loop seamlessly at -50%
-const marqueeWords = [...headingWords, ...headingWords];
-
-const descLines = [
-  'A controlled experimental study comparing animation rendering',
-  'performance across React, Vue.js, Svelte and Angular frameworks.',
-];
-
-/* ---------------------------------------------------------------------- */
-/*  Small helpers                                                         */
-/* ---------------------------------------------------------------------- */
-
-function useCountUp(target, duration = 1300, startDelay = 1400) {
+/* ─── RAF count-up hook ──────────────────────────────────────────────────── */
+function useCountUp(target, duration = 1400, startDelay = 1600) {
   const [value, setValue] = useState(0);
   const [done, setDone] = useState(false);
   useEffect(() => {
@@ -67,466 +83,368 @@ function useCountUp(target, duration = 1300, startDelay = 1400) {
   return { value, done };
 }
 
+/* ─── Elastic-stretch stat + cursor-tracked shadow ─────────────────────── */
 function CountStat({ target, suffix = '', label, delayMs }) {
-  const { value, done } = useCountUp(target, 1200, delayMs);
-  const style = useSpringWeb({
-    from: { opacity: 0, y: 18 },
-    to: { opacity: 1, y: 0 },
-    delay: delayMs,
-    config: { tension: 200, friction: 20 },
-  });
+  const { value, done } = useCountUp(target, 1300, delayMs);
+  const numRef = useRef(null);
+
+  const handleMove = (e) => {
+    const el = numRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const dx = ((e.clientX - rect.left) / rect.width - 0.5) * 16;
+    const dy = ((e.clientY - rect.top) / rect.height - 0.5) * 16;
+    el.style.textShadow = `${dx}px ${dy}px 16px rgba(124,58,237,0.6)`;
+  };
+  const handleLeave = () => {
+    if (numRef.current) numRef.current.style.textShadow = '';
+  };
+
   return (
-    <animatedWeb.div className="stat" style={{ opacity: style.opacity, transform: style.y.to((v) => `translateY(${v}px)`) }}>
-      <span className={`stat-number${done ? ' glow-done' : ''}`}>{value}{suffix}</span>
+    <motion.div
+      className="stat"
+      initial={{ opacity: 0, y: 20, filter: 'blur(6px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ delay: delayMs / 1000, duration: 0.6 }}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+    >
+      <motion.span
+        key={value}
+        ref={numRef}
+        className={`stat-number elastic-stretch${done ? ' glow-done' : ''}`}
+        initial={{ scaleY: 1.6, scaleX: 0.7 }}
+        animate={{ scaleY: 1, scaleX: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 8 }}
+      >
+        {value}{suffix}
+      </motion.span>
       <span className="stat-label">{label}</span>
-    </animatedWeb.div>
+    </motion.div>
   );
 }
 
-/** Magnetic, spring-driven button — replaces the framer-motion version from earlier levels. */
+/* ─── Magnetic button ────────────────────────────────────────────────────── */
 function MagneticButton({ className, onClick, children }) {
   const ref = useRef(null);
-  const [style, api] = useSpringWeb(() => ({
-    x: 0, y: 0, scale: 1,
-    config: { tension: 300, friction: 18 },
-  }));
-
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const sx = useSpring(x, { stiffness: 180, damping: 14 });
+  const sy = useSpring(y, { stiffness: 180, damping: 14 });
   const handleMove = (e) => {
     const rect = ref.current.getBoundingClientRect();
-    const dx = (e.clientX - rect.left - rect.width / 2) * 0.25;
-    const dy = (e.clientY - rect.top - rect.height / 2) * 0.25;
-    api.start({ x: dx, y: dy });
+    x.set((e.clientX - rect.left - rect.width / 2) * 0.3);
+    y.set((e.clientY - rect.top - rect.height / 2) * 0.3);
+    ref.current.style.setProperty('--mx', `${e.clientX - rect.left}px`);
+    ref.current.style.setProperty('--my', `${e.clientY - rect.top}px`);
   };
-  const handleEnter = () => api.start({ scale: 1.05 });
-  const handleLeave = () => api.start({ x: 0, y: 0, scale: 1 });
-  const handleDown = () => api.start({ scale: 0.92 });
-  const handleUp = () => api.start({ scale: 1.05 });
-
+  const handleLeave = () => { x.set(0); y.set(0); };
   return (
-    <animatedWeb.button
+    <motion.button
       ref={ref}
       className={className}
       onClick={onClick}
       onMouseMove={handleMove}
-      onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      onMouseDown={handleDown}
-      onMouseUp={handleUp}
-      style={{
-        transform: style.x.to((x) => `translate(${x}px, ${style.y.get()}px) scale(${style.scale.get()})`),
-      }}
+      style={{ x: sx, y: sy }}
+      whileTap={{ scale: 0.9 }}
+      whileHover={{ scale: 1.06, boxShadow: '0 10px 32px rgba(124,58,237,0.55)' }}
+      transition={{ type: 'spring', stiffness: 380, damping: 12 }}
     >
       {children}
-    </animatedWeb.button>
+    </motion.button>
   );
 }
 
-/* ---------------------------------------------------------------------- */
-/*  3D hero object — draggable realistic globe with automatic rotation    */
-/*  (plain three.js, no @react-three/fiber)                              */
-/* ---------------------------------------------------------------------- */
+/* ─── Heading marquee content (rendered twice for seamless loop) ─────────── */
+function HeadingCopy() {
+  return (
+    <span className="heading-marquee-copy">
+      Animation&nbsp;
+      <span className="highlight gradient-shimmer">Performance</span>
+      &nbsp;Benchmark
+      <span className="heading-marquee-sep" aria-hidden="true">✦</span>
+    </span>
+  );
+}
 
-function ThreeScene() {
-  const containerRef = useRef(null);
+const descLines = [
+  'A controlled experimental study comparing animation rendering',
+  'performance across React, Vue.js, Svelte and Angular frameworks.',
+];
+
+/* ─── App ────────────────────────────────────────────────────────────────── */
+function App() {
+  const [modal, setModal] = useState(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (!modal) return;
+    const onKey = (e) => { if (e.key === 'Escape') setModal(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [modal]);
 
-    let width = container.clientWidth || 1;
-    let height = container.clientHeight || 1;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
-    camera.position.set(0, 0, 4.2);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.domElement.style.width = '100%';
-    renderer.domElement.style.height = '100%';
-    renderer.domElement.style.display = 'block';
-    renderer.domElement.style.cursor = 'grab';
-    container.appendChild(renderer.domElement);
-
-    // --- Create a realistic globe with continents and atmosphere ---
-
-    // 1. Core sphere (Earth-like)
-    const geometry = new THREE.SphereGeometry(1.35, 64, 64);
-    
-    // Load a realistic earth texture (using a free high-res texture)
-    const textureLoader = new THREE.TextureLoader();
-    const earthMap = textureLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
-    const earthSpecularMap = textureLoader.load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg');
-    const earthNormalMap = textureLoader.load('https://threejs.org/examples/textures/planets/earth_normal_2048.jpg');
-    const cloudMap = textureLoader.load('https://threejs.org/examples/textures/planets/earth_clouds_1024.png');
-
-    const material = new THREE.MeshPhongMaterial({
-      map: earthMap,
-      specularMap: earthSpecularMap,
-      specular: new THREE.Color('grey'),
-      shininess: 10,
-      normalMap: earthNormalMap,
-      normalScale: new THREE.Vector2(0.8, 0.8),
-    });
-    const earth = new THREE.Mesh(geometry, material);
-    scene.add(earth);
-
-    // 2. Cloud layer (slightly larger, transparent, rotating at different speed)
-    const cloudGeometry = new THREE.SphereGeometry(1.36, 64, 64);
-    const cloudMaterial = new THREE.MeshPhongMaterial({
-      map: cloudMap,
-      transparent: true,
-      opacity: 0.35,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
-    scene.add(clouds);
-
-    // 3. Atmosphere glow (outer shell)
-    const glowGeometry = new THREE.SphereGeometry(1.42, 64, 64);
-    const glowMaterial = new THREE.MeshPhongMaterial({
-      color: '#4f46e5',
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.BackSide,
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    scene.add(glow);
-
-    // 4. Starfield background (particles)
-    const starsGeometry = new THREE.BufferGeometry();
-    const starsCount = 2000;
-    const starPositions = new Float32Array(starsCount * 3);
-    const starSizes = new Float32Array(starsCount);
-    for (let i = 0; i < starsCount; i++) {
-      const radius = 10 + Math.random() * 20;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos((Math.random() * 2) - 1);
-      starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      starPositions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      starPositions[i * 3 + 2] = radius * Math.cos(phi);
-      starSizes[i] = 0.02 + Math.random() * 0.06;
-    }
-    starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starsGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
-    const starsMaterial = new THREE.PointsMaterial({
-      color: '#ffffff',
-      size: 0.05,
-      transparent: true,
-      opacity: 0.8,
-      sizeAttenuation: true,
-    });
-    const starField = new THREE.Points(starsGeometry, starsMaterial);
-    scene.add(starField);
-
-    // 5. Lighting
-    scene.add(new THREE.AmbientLight(0x222244, 0.4));
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    sunLight.position.set(5, 3, 5);
-    scene.add(sunLight);
-    const backLight = new THREE.DirectionalLight(0x8888ff, 0.4);
-    backLight.position.set(-3, -1, -5);
-    scene.add(backLight);
-    const rimLight = new THREE.DirectionalLight(0x4466ff, 0.3);
-    rimLight.position.set(-2, 4, -3);
-    scene.add(rimLight);
-
-    // --- Interaction state ---
-    let rotY = 0;
-    let rotX = 0.35;
-    let curScale = 1;
-    let targetScale = 1;
-    let dragging = false;
-    let last = { x: 0, y: 0 };
-    let disposed = false;
-    let autoRotate = true;
-
-    // --- Event handlers ---
-    const onPointerDown = (e) => {
-      dragging = true;
-      autoRotate = false;
-      last = { x: e.clientX, y: e.clientY };
-      targetScale = 1.06;
-      renderer.domElement.style.cursor = 'grabbing';
-    };
-    const onPointerMove = (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - last.x;
-      const dy = e.clientY - last.y;
-      last = { x: e.clientX, y: e.clientY };
-      rotY += dx * 0.008;
-      rotX += dy * 0.008;
-      // Clamp vertical rotation
-      rotX = Math.max(-1.2, Math.min(1.2, rotX));
-    };
-    const onPointerUp = () => {
-      dragging = false;
-      targetScale = 1;
-      renderer.domElement.style.cursor = 'grab';
-      // Resume auto-rotation after a delay
-      setTimeout(() => { autoRotate = true; }, 3000);
-    };
-
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
-
-    // --- Animation loop ---
-    let lastTime = performance.now();
-    let raf;
-    const animate = (time) => {
-      if (disposed) return;
-      const delta = Math.min((time - lastTime) / 1000, 0.1);
-      lastTime = time;
-
-      // Auto-rotate when not dragging
-      if (!dragging && autoRotate) {
-        rotY += delta * 0.15; // slow automatic rotation
-      }
-
-      // Apply rotations
-      earth.rotation.x = rotX;
-      earth.rotation.y = rotY;
-      clouds.rotation.x = rotX;
-      clouds.rotation.y = rotY + delta * 0.02; // clouds drift slightly
-      glow.rotation.x = rotX;
-      glow.rotation.y = rotY;
-
-      // Scale spring
-      const ease = Math.min(delta * 8, 1);
-      curScale += (targetScale - curScale) * ease;
-      earth.scale.setScalar(curScale);
-      clouds.scale.setScalar(curScale);
-      glow.scale.setScalar(curScale);
-
-      // Rotate star field slowly
-      starField.rotation.y += delta * 0.005;
-      starField.rotation.x += delta * 0.002;
-
-      renderer.render(scene, camera);
-      raf = requestAnimationFrame(animate);
-    };
-    raf = requestAnimationFrame(animate);
-
-    // --- Resize handler ---
-    const handleResize = () => {
-      width = container.clientWidth || 1;
-      height = container.clientHeight || 1;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-    };
-    const resizeObserver = new ResizeObserver(handleResize);
-    resizeObserver.observe(container);
-
-    // --- Cleanup ---
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(raf);
-      resizeObserver.disconnect();
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      
-      // Dispose geometries and materials
-      geometry.dispose();
-      material.dispose();
-      cloudGeometry.dispose();
-      cloudMaterial.dispose();
-      glowGeometry.dispose();
-      glowMaterial.dispose();
-      starsGeometry.dispose();
-      starsMaterial.dispose();
-      renderer.dispose();
-      
-      if (container.contains(renderer.domElement)) {
-        container.removeChild(renderer.domElement);
-      }
-    };
-  }, []);
-
-  return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
-}
-
-/** Catches WebGL failures (e.g. no WebGL support, context lost) so the
- *  whole page doesn't unmount to a blank screen — only this panel degrades. */
-class SceneErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error) {
-    console.error('3D scene failed to render:', error);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{
-          width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#c4b5fd', fontSize: '0.85rem', textAlign: 'center', padding: '24px',
-        }}>
-          3D preview unavailable in this browser.
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-/* ---------------------------------------------------------------------- */
-/*  Page                                                                   */
-/* ---------------------------------------------------------------------- */
-
-function Level5() {
-  const [modal, setModal] = useState(null);
   const openResearchModal = () => setModal(researchInfo);
   const openLearnMoreModal = () => setModal(learnMore);
   const closeModal = () => setModal(null);
 
-  const stars = useMemo(
-    () => Array.from({ length: 45 }, (_, i) => ({
-      id: i,
-      left: `${(i * 47) % 100}%`,
-      top: `${(i * 29) % 100}%`,
-      delay: `${(i % 9) * 0.4}s`,
-      duration: `${3 + (i % 4)}s`,
-    })),
-    []
-  );
+  const heroRef = useRef(null);
+  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
+  const circleY = useTransform(scrollYProgress, [0, 1], [0, 60]);
 
-  const navStyle = useSpringWeb({ from: { y: -80, opacity: 0 }, to: { y: 0, opacity: 1 }, config: { tension: 120, friction: 16 } });
-  const badgeStyle = useSpringWeb({ from: { opacity: 0, y: -12 }, to: { opacity: 1, y: 0 }, delay: 300 });
-  const tagStyle = useSpringWeb({ from: { opacity: 0, y: 12 }, to: { opacity: 1, y: 0 }, delay: 900 });
-  const [subStyles] = useSpringsWeb(descLines.length, (i) => ({ from: { opacity: 0 }, to: { opacity: 1 }, delay: 1050 + i * 180 }));
-  const buttonsStyle = useSpringWeb({ from: { opacity: 0, y: 16 }, to: { opacity: 1, y: 0 }, delay: 1500 });
-  const sceneStyle = useSpringWeb({ from: { opacity: 0, scale: 0.85 }, to: { opacity: 1, scale: 1 }, delay: 500, config: { tension: 90, friction: 16 } });
-  const labelStyle = useSpringWeb({ from: { opacity: 0 }, to: { opacity: 1 }, delay: 1200 });
-  const footerStyle = useSpringWeb({ from: { opacity: 0, y: 30 }, to: { opacity: 1, y: 0 }, config: { tension: 100, friction: 20 } });
+  const ring1Ref = useRef(null);
+  const ring2Ref = useRef(null);
+  const ring3Ref = useRef(null);
+  const logoRef  = useRef(null);
 
-  const transitions = useTransition(modal, {
-    from: { opacity: 0, transform: 'scale(0.75) translateY(20px)' },
-    enter: { opacity: 1, transform: 'scale(1) translateY(0px)' },
-    leave: { opacity: 0, transform: 'scale(0.85) translateY(10px)' },
-    config: { tension: 260, friction: 22 },
-  });
+  /* GSAP: ring rotations + logo breathing (unchanged from original L5) */
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.to(ring1Ref.current, { rotation: 360,  duration: 20, repeat: -1, ease: 'none' });
+      gsap.to(ring2Ref.current, { rotation: -360, duration: 16, repeat: -1, ease: 'none' });
+      gsap.to(ring3Ref.current, { rotation: 360,  duration: 12, repeat: -1, ease: 'none' });
+
+      gsap.to(logoRef.current, {
+        scale: 1.18,
+        duration: 1.3,
+        repeat: -1,
+        yoyo: true,
+        ease: 'elastic.out(1, 0.45)',
+        delay: 1,
+      });
+      gsap.to(logoRef.current, {
+        boxShadow: '0 0 55px rgba(124,58,237,0.85)',
+        duration: 1.3,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut',
+        delay: 1,
+      });
+    }, heroRef);
+
+    return () => ctx.revert();
+  }, []);
+
+  const handleLogoEnter = () =>
+    gsap.to(logoRef.current, { scale: 1.32, rotate: '+=25', duration: 0.4, ease: 'power2.out' });
+  const handleLogoLeave = () =>
+    gsap.to(logoRef.current, { scale: 1, rotate: '+=0', duration: 0.5, ease: 'elastic.out(1, 0.5)' });
 
   return (
     <div className="page">
-      {transitions((style, item) => item && (
-        <animatedWeb.div className="modal-overlay" style={{ opacity: style.opacity }} onClick={closeModal}>
-          <animatedWeb.div className="modal-box" style={{ transform: style.transform }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{item.title}</h2>
-              <button className="modal-close" onClick={closeModal}>✕</button>
-            </div>
-            <div className="modal-body">
-              {item.content.map((line, idx) => (
-                <div className="modal-item" key={idx}>
-                  <span className="modal-dot">▸</span>
-                  <p>{line}</p>
-                </div>
-              ))}
-            </div>
-          </animatedWeb.div>
-        </animatedWeb.div>
-      ))}
+      {/* ── Modal ── */}
+      <AnimatePresence>
+        {modal && (
+          <motion.div
+            className="modal-overlay"
+            onClick={closeModal}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              className="modal-box"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="modal-title"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.7, rotate: -4, filter: 'blur(6px)' }}
+              animate={{ opacity: 1, scale: 1, rotate: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, scale: 0.85, filter: 'blur(4px)' }}
+              transition={{ type: 'spring', stiffness: 240, damping: 20 }}
+            >
+              <div className="modal-header">
+                <h2 id="modal-title">{modal.title}</h2>
+                <motion.button
+                  whileHover={{ rotate: 90, scale: 1.08 }}
+                  className="modal-close"
+                  onClick={closeModal}
+                  aria-label="Close modal"
+                >
+                  ✕
+                </motion.button>
+              </div>
+              <div className="modal-body">
+                {modal.content.map((item, idx) => (
+                  <motion.div
+                    className="modal-item"
+                    key={idx}
+                    initial={{ opacity: 0, x: -14 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: idx * 0.07 }}
+                  >
+                    <span className="modal-dot">▸</span>
+                    <p>{item}</p>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <animatedWeb.nav
+      {/* ── Navbar ── */}
+      <motion.nav
         className="navbar"
-        style={{ opacity: navStyle.opacity, transform: navStyle.y.to((v) => `translateY(${v}px)`) }}
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 110, damping: 15, delay: 0.1 }}
       >
         <div className="brand">
-          <span className="brand-dot"></span>
+          <motion.span
+            className="brand-dot"
+            aria-hidden="true"
+            animate={{
+              scale: [1, 1.6, 1],
+              boxShadow: ['0 0 0px #4f46e5', '0 0 14px #4f46e5', '0 0 0px #4f46e5'],
+            }}
+            transition={{ duration: 2, repeat: Infinity, delay: 0.6 }}
+          />
           AnimBench
         </div>
-        <div className="level-badge" style={{ background: 'linear-gradient(135deg, #db2777, #7c3aed)', boxShadow: '0 2px 14px rgba(219,39,119,0.4)' }}>
-          Level 5 — Immersive 3D
-        </div>
-      </animatedWeb.nav>
+        <motion.div
+          className="level-badge"
+          style={LEVEL_BADGE_STYLE}
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.4, type: 'spring', stiffness: 260, damping: 16 }}
+        >
+          Level 5 — Cinematic
+        </motion.div>
+      </motion.nav>
 
-      <section className="hero">
-        <div className="nebula"><span /><span /><span /></div>
-        <div className="star-field">
-          {stars.map((s) => (
-            <span
-              key={s.id}
-              className="star"
-              style={{ left: s.left, top: s.top, animationDelay: s.delay, animationDuration: s.duration }}
-            />
-          ))}
-        </div>
+      {/* ── Hero ── */}
+      <ErrorBoundary>
+        <section className="hero" ref={heroRef}>
+          <div className="aurora" aria-hidden="true"><span /><span /><span /></div>
 
-        {/* Full width marquee section */}
-        <div className="marquee-section">
-          <animatedWeb.p className="badge" style={badgeStyle}>🔬 Research Project — SUSL</animatedWeb.p>
+          <div className="hero-left" style={{ position: 'relative', zIndex: 2 }}>
+            <motion.p
+              className="badge"
+              initial={{ opacity: 0, y: -12, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ delay: 0.55, duration: 0.5 }}
+            >
+              🔬 Research Project — SUSL
+            </motion.p>
 
-          <div className="marquee-heading">
-            <div className="marquee-track">
-              {marqueeWords.map((word, i) => (
-                <h1 key={i}>
-                  <span className={word === 'Performance' ? 'highlight' : undefined}>{word}</span>
-                </h1>
-              ))}
-            </div>
-          </div>
-        </div>
+            {/*
+              ── Marquee heading ──────────────────────────────────────────
+              "Animation Performance Benchmark" scrolls continuously.
+              Two identical copies sit side-by-side; the track slides left
+              by exactly 50% so the loop is perfectly seamless.
+              "Performance" carries the gradient-shimmer colour sweep.
+            */}
+            <motion.div
+              initial={{ opacity: 0, filter: 'blur(6px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
+              transition={{ delay: 0.7, duration: 0.6 }}
+            >
+              <h1 className="heading-marquee-wrapper" aria-label="Animation Performance Benchmark">
+                <div className="heading-marquee-track" role="presentation">
+                  <HeadingCopy />
+                  <HeadingCopy />
+                </div>
+              </h1>
+            </motion.div>
 
-        {/* Content row below marquee */}
-        <div className="content-row">
-          <div className="hero-left">
-            <animatedWeb.p className="level-tag" style={tagStyle}>
-              🪐 Level 5: Marquee typography · Draggable 3D scene · plain three.js + react-spring
-            </animatedWeb.p>
+            <motion.p
+              className="level-tag"
+              style={LEVEL_TAG_STYLE}
+              initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ delay: 1.5, duration: 0.55 }}
+              whileHover={{ scale: 1.08, y: -3, boxShadow: '0 6px 18px rgba(124,58,237,0.3)' }}
+            >
+              🎬 Level 5: Cinematic · Drop shadows · Blur · Smooth GPU transitions · Marquee
+            </motion.p>
 
             <div className="hero-sub">
               {descLines.map((line, i) => (
-                <animatedWeb.p key={i} style={subStyles[i]}>{line}</animatedWeb.p>
+                <motion.p
+                  key={i}
+                  initial={{ opacity: 0, filter: 'blur(5px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  transition={{ delay: 1.7 + i * 0.2, duration: 0.5 }}
+                >
+                  {line}
+                </motion.p>
               ))}
             </div>
 
-            <animatedWeb.div className="hero-buttons" style={buttonsStyle}>
-              <MagneticButton className="btn-primary" onClick={openResearchModal}>View Research</MagneticButton>
-              <MagneticButton className="btn-secondary" onClick={openLearnMoreModal}>Learn More</MagneticButton>
-            </animatedWeb.div>
+            <motion.div
+              className="hero-buttons"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 2.15 }}
+            >
+              <MagneticButton className="btn-primary" onClick={openResearchModal}>
+                View Research
+              </MagneticButton>
+              <MagneticButton className="btn-secondary" onClick={openLearnMoreModal}>
+                Learn More
+              </MagneticButton>
+            </motion.div>
 
             <div className="hero-stats">
-              <CountStat target={4} label="Frameworks" delayMs={1650} />
-              <CountStat target={7} label="Metrics" delayMs={1800} />
-              <CountStat target={30} suffix="+" label="Test Runs" delayMs={1950} />
+              <CountStat target={4}  label="Frameworks" delayMs={2350} />
+              <CountStat target={7}  label="Metrics"    delayMs={2500} />
+              <CountStat target={30} suffix="+" label="Test Runs" delayMs={2650} />
             </div>
           </div>
 
-          <div className="hero-right">
-            <animatedWeb.div className="scene-wrap" style={sceneStyle}>
-              <SceneErrorBoundary>
-                <ThreeScene />
-              </SceneErrorBoundary>
-              <span className="scene-hint">drag to rotate</span>
-            </animatedWeb.div>
-            <animatedWeb.p className="logo-label" style={labelStyle}>⚡ Animated Test Element</animatedWeb.p>
-          </div>
-        </div>
-      </section>
+          <motion.div
+            className="hero-right"
+            style={{ position: 'relative', zIndex: 2, y: circleY }}
+            initial={{ opacity: 0, x: 70 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.9, type: 'spring', stiffness: 80, damping: 15 }}
+          >
+            <div className="logo-wrapper">
+              <div className="ring ring-1" ref={ring1Ref}></div>
+              <div className="ring ring-2" ref={ring2Ref}></div>
+              <div className="ring ring-3" ref={ring3Ref}></div>
+              <div
+                className="animated-logo"
+                ref={logoRef}
+                onMouseEnter={handleLogoEnter}
+                onMouseLeave={handleLogoLeave}
+              ></div>
+            </div>
+            <motion.p
+              className="logo-label"
+              initial={{ opacity: 0, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
+              transition={{ delay: 1.7 }}
+              whileHover={{ scale: 1.08, y: -2 }}
+            >
+              ⚡ Animated Test Element
+            </motion.p>
+          </motion.div>
+        </section>
+      </ErrorBoundary>
 
-      <animatedWeb.footer
+      {/* ── Footer ── */}
+      <motion.footer
         className="footer"
-        style={{ opacity: footerStyle.opacity, transform: footerStyle.y.to((v) => `translateY(${v}px)`) }}
+        initial={{ opacity: 0, scale: 0.96, y: 30 }}
+        whileInView={{ opacity: 1, scale: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.4 }}
+        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
       >
         <div className="footer-inner">
-          <div className="footer-brand"><span className="brand-dot"></span>AnimBench</div>
+          <div className="footer-brand">
+            <span className="brand-dot" aria-hidden="true"></span>
+            AnimBench
+          </div>
           <p>IS 8101 Research Project in Information Systems</p>
-          <p>Department of Computing & Information Systems</p>
+          <p>Department of Computing &amp; Information Systems</p>
           <p>Sabaragamuwa University of Sri Lanka</p>
           <p className="footer-copy">© 2025 S. Niluxshan — 20APC4681</p>
         </div>
-      </animatedWeb.footer>
+      </motion.footer>
     </div>
   );
 }
 
-export default Level5;
+export default App;
